@@ -1,0 +1,6 @@
+- id: leaklens
+  name: LeakLens secret scan
+  description: Scan staged files for likely secrets using redacted findings.
+  entry: leaklens --fail-on low
+  language: python
+  types: [file]
