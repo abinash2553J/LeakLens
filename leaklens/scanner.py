@@ -141,6 +141,7 @@ class SecretScanner:
         text = raw.decode("utf-8", errors="replace")
         findings: list[Finding] = []
         relative_path = self._display_path(path)
+        fingerprint_occurrences: dict[tuple[str, str], int] = {}
         for line_number, line in enumerate(text.splitlines(), start=1):
             detections = self._detect_line(line, allow_bare=self._supports_bare_values(path))
             if not detections:
@@ -155,10 +156,13 @@ class SecretScanner:
             if not chosen:
                 continue
             redacted = self._redact(line, [(item.start, item.end) for item in chosen])
+            redacted_line = redacted.strip()
             for detection in chosen:
-                secret_digest = hashlib.sha256(detection.value.encode("utf-8", errors="replace")).hexdigest()
+                fingerprint_key = (detection.rule.rule_id, redacted_line)
+                occurrence = fingerprint_occurrences.get(fingerprint_key, 0)
+                fingerprint_occurrences[fingerprint_key] = occurrence + 1
                 fingerprint = hashlib.sha256(
-                    f"{relative_path}:{detection.rule.rule_id}:{secret_digest}".encode("utf-8")
+                    f"v2:{detection.rule.rule_id}:{relative_path}:{occurrence}:{redacted_line}".encode("utf-8")
                 ).hexdigest()
                 findings.append(Finding(
                     rule_id=detection.rule.rule_id,
@@ -168,7 +172,7 @@ class SecretScanner:
                     path=relative_path,
                     line=line_number,
                     column=detection.start + 1,
-                    snippet=redacted.strip()[:300],
+                    snippet=redacted_line[:300],
                     fingerprint=fingerprint,
                     recommendation=detection.rule.recommendation,
                 ))

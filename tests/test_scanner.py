@@ -230,3 +230,54 @@ def test_explicit_ignored_file_is_scanned_but_directory_scan_skips_it(tmp_path: 
     assert len(explicit.findings) == 1
     assert explicit.findings[0].path == ".env.local"
     assert directory.findings == []
+
+
+def test_fingerprint_does_not_hash_the_raw_secret(tmp_path: Path) -> None:
+    import hashlib
+
+    weak_password = "weak" + "password"
+    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")
+
+    result = scan(tmp_path)
+    finding = result.findings[0]
+    old_secret_digest = hashlib.sha256(weak_password.encode()).hexdigest()
+    old_fingerprint = hashlib.sha256(
+        f"{finding.path}:{finding.rule_id}:{old_secret_digest}".encode()
+    ).hexdigest()
+
+    assert finding.fingerprint != old_fingerprint
+    assert weak_password not in json.dumps(result.to_dict())
+    assert old_secret_digest not in render_json(result)
+
+
+def test_duplicate_secret_lines_receive_distinct_fingerprints(tmp_path: Path) -> None:
+    weak_password = "weak" + "password"
+    line = f'password = "{weak_password}"'
+    (tmp_path / "settings.py").write_text(line + "\n" + line + "\n", encoding="utf-8")
+
+    result = scan(tmp_path)
+
+    assert len(result.findings) == 2
+    assert result.findings[0].fingerprint != result.findings[1].fingerprint
+
+
+def test_fingerprints_are_stable_for_identical_scans(tmp_path: Path) -> None:
+    weak_password = "weak" + "password"
+    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")
+
+    first = scan(tmp_path)
+    second = scan(tmp_path)
+
+    assert [item.fingerprint for item in first.findings] == [
+        item.fingerprint for item in second.findings
+    ]
+
+
+def test_sarif_uses_v2_partial_fingerprint_key(tmp_path: Path) -> None:
+    token = "ghp_" + "a1B2c3D4" * 5
+    (tmp_path / "service.py").write_text(f'token = "{token}"\n', encoding="utf-8")
+
+    document = json.loads(render_sarif(scan(tmp_path)))
+    fingerprints = document["runs"][0]["results"][0]["partialFingerprints"]
+
+    assert list(fingerprints) == ["leaklens/v2"]

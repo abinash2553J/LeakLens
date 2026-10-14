@@ -88,7 +88,7 @@ def render_sarif(result: ScanResult) -> str:
                     },
                 }
             }],
-            "partialFingerprints": {"leaklens/v1": finding.fingerprint},
+            "partialFingerprints": {"leaklens/v2": finding.fingerprint},
             "properties": {"severity": finding.severity},
         })
 
