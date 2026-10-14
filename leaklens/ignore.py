@@ -75,7 +75,9 @@ class IgnoreMatcher:
         path = rel_path.replace("\\", "/").strip("/")
         if not path:
             return False
-        if any(part in DEFAULT_EXCLUDED_DIRS for part in path.split("/")):
+        parts = path.split("/")
+        directory_parts = parts if is_dir else parts[:-1]
+        if any(part in DEFAULT_EXCLUDED_DIRS for part in directory_parts):
             return True
         ignored = False
         for pattern in self.patterns:

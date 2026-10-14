@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from leaklens.reporters import render_text
 from leaklens.scanner import ScanConfig, SecretScanner
@@ -14,8 +17,8 @@ def main() -> int:
     fake_aws_key = "AKIA" + "A" * 16
     fake_github_token = "ghp_" + "b" * 36
     source = (
-        f'aws_access_key = "{fake_aws_key}"\n'
-        f'GITHUB_TOKEN = "{fake_github_token}"\n'
+        f'aws_access_key = "{fake_aws_key}"\n'  # leaklens:ignore LL012
+        f'GITHUB_TOKEN = "{fake_github_token}"\n'  # leaklens:ignore LL012
         'API_KEY = "YOUR_API_KEY_HERE"\n'
     )
 

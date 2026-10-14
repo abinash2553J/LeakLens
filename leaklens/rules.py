@@ -100,7 +100,7 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         "LL012", "Generic secret assignment", "high", "A secret-like value is assigned to a sensitive variable or key.",
-        r"\b(?:api[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|refresh[_-]?token|token|password|passwd|database[_-]?password|db[_-]?password|secret(?:[_-]?key)?|private[_-]?key|credential|db[_-]?url|database[_-]?url)\b\s*(?:=|:)\s*(?:['\"](?P<quoted>[^'\"\r\n]{8,})['\"]|(?P<bare>[A-Za-z0-9_./+=-]{12,}))",
+        r"(?P<key>['\"]?[A-Za-z_][A-Za-z0-9_.-]*['\"]?)(?:\s*:\s*[A-Za-z_][A-Za-z0-9_.\[\]|]*)?\s*(?:=|:)\s*(?:['\"](?P<quoted>[^'\"\r\n]{8,})['\"]|(?P<bare>[A-Za-z0-9_+/=-]{12,}))",
         group="quoted", priority=60, flags=re.IGNORECASE,
         recommendation="Move the value into an environment variable or secret manager. If it was committed, rotate it; deleting the line alone is not enough.",
     ),

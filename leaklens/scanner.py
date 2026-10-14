@@ -6,13 +6,14 @@ import hashlib
 import math
 import os
 import re
+import stat as stat_module
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from .ignore import IgnoreMatcher, inline_suppresses
 from .models import Finding, ScanResult
-from .rules import ALL_RULES, ENTROPY_RULE, RULES, Rule
+from .rules import ENTROPY_RULE, RULES, Rule
 
 
 PLACEHOLDER_PREFIXES = (
@@ -27,9 +28,6 @@ PLACEHOLDER_VALUES = {
     "examplekey", "sample", "dummy", "redacted", "null", "none", "undefined",
     "xxxxxxxx", "xxxxxxxxxx", "1234567890", "abcdefabcdefabcdef",
 }
-
-STRING_LITERALS = re.compile(r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
-SECRET_WORDS = re.compile(r"api|key|token|secret|password|passwd|credential|auth|private", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,12 +89,8 @@ class SecretScanner:
                 # Surface inaccessible paths through the normal error channel.
                 yield candidate
                 continue
-            if candidate.is_symlink():
-                continue
             if candidate.is_file():
-                rel = self._relative_path(candidate)
-                if self.matcher.is_ignored(rel, is_dir=False):
-                    continue
+                # Explicit file arguments are intentional: ignore rules apply when walking directories.
                 if candidate not in seen:
                     seen.add(candidate)
                     yield candidate
@@ -128,11 +122,10 @@ class SecretScanner:
                         yield child
 
     def _scan_file(self, path: Path) -> tuple[list[Finding], bool]:
-        try:
-            stat = path.stat()
-        except OSError:
-            raise
-        if stat.st_size > self.config.max_file_size:
+        file_stat = path.stat()
+        if not stat_module.S_ISREG(file_stat.st_mode):
+            return [], True
+        if file_stat.st_size > self.config.max_file_size:
             return [], True
         with path.open("rb") as handle:
             raw = handle.read(self.config.max_file_size + 1)
@@ -143,22 +136,29 @@ class SecretScanner:
         text = raw.decode("utf-8", errors="replace")
         findings: list[Finding] = []
         relative_path = self._display_path(path)
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            detections = self._detect_line(line)
+        fingerprint_occurrences: dict[tuple[str, str], int] = {}
+        for line_number, raw_line in enumerate(text.split("\n"), start=1):
+            line = raw_line.rstrip("\r")
+            detections = self._detect_line(line, allow_bare=self._supports_bare_values(path))
             if not detections:
                 continue
-            unsuppressed = [
-                detection for detection in detections
+            # Resolve overlaps before suppression so hiding a provider-specific winner
+            # cannot reveal a generic assignment match over the same span.
+            chosen = self._remove_overlaps(detections)
+            chosen = [
+                detection for detection in chosen
                 if not inline_suppresses(line, detection.rule.rule_id)
             ]
-            chosen = self._remove_overlaps(unsuppressed)
             if not chosen:
                 continue
             redacted = self._redact(line, [(item.start, item.end) for item in chosen])
+            redacted_line = redacted.strip()
             for detection in chosen:
-                secret_digest = hashlib.sha256(detection.value.encode("utf-8", errors="replace")).hexdigest()
+                fingerprint_key = (detection.rule.rule_id, redacted_line)
+                occurrence = fingerprint_occurrences.get(fingerprint_key, 0)
+                fingerprint_occurrences[fingerprint_key] = occurrence + 1
                 fingerprint = hashlib.sha256(
-                    f"{relative_path}:{detection.rule.rule_id}:{secret_digest}".encode("utf-8")
+                    f"v2:{detection.rule.rule_id}:{relative_path}:{occurrence}:{redacted_line}".encode("utf-8")
                 ).hexdigest()
                 findings.append(Finding(
                     rule_id=detection.rule.rule_id,
@@ -168,13 +168,22 @@ class SecretScanner:
                     path=relative_path,
                     line=line_number,
                     column=detection.start + 1,
-                    snippet=redacted.strip()[:300],
+                    snippet=redacted_line[:300],
                     fingerprint=fingerprint,
                     recommendation=detection.rule.recommendation,
                 ))
         return findings, False
 
-    def _detect_line(self, line: str) -> list[_Detection]:
+    @staticmethod
+    def _supports_bare_values(path: Path) -> bool:
+        """Return whether unquoted secret values are valid in this file format."""
+        if path.name.startswith(".env") or path.name == "Dockerfile":
+            return True
+        return path.suffix.lower() in {
+            ".ini", ".cfg", ".conf", ".properties", ".yaml", ".yml", ".sh", ".bash", ".zsh",
+        }
+
+    def _detect_line(self, line: str, *, allow_bare: bool = False) -> list[_Detection]:
         detections: list[_Detection] = []
         for rule in RULES:
             for match in rule.pattern.finditer(line):
@@ -185,7 +194,7 @@ class SecretScanner:
                     if match.groupdict().get("quoted") is not None:
                         span = match.span("quoted")
                         value = match.group("quoted")
-                    elif match.groupdict().get("bare") is not None:
+                    elif match.groupdict().get("bare") is not None and allow_bare:
                         span = match.span("bare")
                         value = match.group("bare")
                 elif isinstance(group, str):
@@ -199,6 +208,16 @@ class SecretScanner:
                     span = match.span(group) if value else None
                 if span is None or span[0] == span[1] or self._is_placeholder(value):
                     continue
+                if rule.rule_id == "LL012":
+                    key = match.group("key").strip("'\"").lower()
+                    normalized_key = key.translate(str.maketrans("", "", "_.-"))
+                    sensitive_suffixes = (
+                        "apikey", "secretkey", "accesskey", "privatekey", "clientsecret",
+                        "authtoken", "accesstoken", "refreshtoken", "token", "password",
+                        "passwd", "secret", "credential", "credentials", "dburl", "databaseurl",
+                    )
+                    if not normalized_key.endswith(sensitive_suffixes):
+                        continue
                 detections.append(_Detection(rule, span[0], span[1], value))
 
         if self.config.include_entropy:
@@ -206,10 +225,8 @@ class SecretScanner:
                 value = match.group("secret")
                 if self._is_placeholder(value) or not self._looks_high_entropy(value):
                     continue
+                # Entropy does not flag single-case or hex strings.
                 if value.islower() or value.isupper():
-                    continue
-                # Do not treat plain hexadecimal checksums as credentials unless the line is secret-related.
-                if re.fullmatch(r"[0-9a-fA-F]{32,}", value) and not SECRET_WORDS.search(line):
                     continue
                 detections.append(_Detection(ENTROPY_RULE, *match.span("secret"), value))
 
@@ -226,7 +243,10 @@ class SecretScanner:
             return True
         if normalized.startswith(PLACEHOLDER_PREFIXES):
             return True
-        if any(marker in normalized for marker in ("process.env", "os.getenv", "getenv(", "secretref", "<your", "<secret", "${", "{{")):
+        if any(marker in normalized for marker in (
+            "process.env", "os.environ", "environ.get", "environ[", "getenv", "env(",
+            "secretref", "<your", "<secret", "${", "{{",
+        )):
             return True
         return False
 

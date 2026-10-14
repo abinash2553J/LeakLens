@@ -16,7 +16,7 @@ Secrets accidentally committed to source code can grant access to cloud infrastr
 ### Features
 
 - **Provider-aware rules:** AWS access-key IDs, GitHub and GitLab tokens, Slack tokens, Stripe keys, Google API keys, OpenAI keys, Hugging Face tokens, SendGrid keys, and private-key headers.
-- **Generic detection:** suspicious values assigned to variables such as `API_KEY`, `DATABASE_PASSWORD`, `ACCESS_TOKEN`, or `CLIENT_SECRET`.
+- **Generic detection:** suspicious values assigned to sensitive variable names and JSON/YAML/configuration keys, including `API_KEY`, `DATABASE_PASSWORD`, `GITHUB_TOKEN`, and `CLIENT_SECRET`. The normalized key must end with a recognized credential suffix, avoiding names such as `password_hash` and `token_url`.
 - **Entropy heuristic:** flags some long, high-entropy string literals that do not match a known provider pattern.
 - **Redacted-by-default reporting:** the raw matched value is never stored in a finding object or printed in reports.
 - **Repository-aware exclusions:** reads root `.gitignore` and `.leaklensignore`, skips common generated/vendor directories, binary files, symlinks, and oversized files.
@@ -120,7 +120,7 @@ Upload the generated SARIF in a GitHub Actions workflow using the official SARIF
 
 ## Ignore rules and suppressions
 
-LeakLens reads patterns from the repository-root `.gitignore` and `.leaklensignore` files. It supports common patterns, directory suffixes such as `generated/`, comments, and basic `!` negation. Nested ignore files and every edge case of Git's ignore semantics are not currently implemented.
+LeakLens reads patterns from the repository-root `.gitignore` and `.leaklensignore` files when recursively scanning directories. It supports common patterns, directory suffixes such as `generated/`, comments, and basic `!` negation. An explicitly named file is scanned even when it matches an ignore rule, so `leaklens .env.local` works even if `.env.local` is in `.gitignore`; a directory scan (`leaklens .`) still skips that file. Nested ignore files and every edge case of Git's ignore semantics are not currently implemented.
 
 Add a repository-specific exclusion to `.leaklensignore`:
 
@@ -157,7 +157,7 @@ The tests construct synthetic credentials at runtime instead of checking real-lo
 
 1. **Discover files:** walk requested paths without following symlinks; prune standard build, cache, and dependency folders.
 2. **Filter files:** apply ignore patterns, file-size limits, and a lightweight binary-file check.
-3. **Match rules:** run provider-specific regular expressions and generic assignment checks line by line. Optionally inspect long string literals with a Shannon-entropy heuristic.
+3. **Match rules:** run provider-specific regular expressions and generic assignment checks line by line. Unquoted generic values are considered only in configuration-style files (`.env*`, INI/CFG/CONF/PROPERTIES, YAML, shell scripts, and `Dockerfile`); source code requires quoted values for `LL012`. Optionally inspect long string literals with a Shannon-entropy heuristic; single-case and hexadecimal strings are excluded from entropy-only findings.
 4. **Suppress and de-duplicate:** honor inline directives and prioritize specific provider rules when matches overlap.
 5. **Redact and report:** replace the detected span with `[REDACTED]`; emit text, JSON, or SARIF with file, line, column, rule, severity, recommendation, and a non-secret fingerprint.
 
