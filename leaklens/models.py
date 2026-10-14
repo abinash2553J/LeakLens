@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from ._version import __version__
+
 
 SEVERITY_ORDER = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
@@ -44,7 +46,7 @@ class ScanResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "tool": {"name": "LeakLens", "version": "1.0.0"},
+            "tool": {"name": "LeakLens", "version": __version__},
             "root": self.root,
             "summary": {
                 "scanned_files": self.scanned_files,

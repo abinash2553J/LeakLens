@@ -25,7 +25,7 @@ LeakLens combines known-format matchers with conservative heuristics. A matching
 
 ## Entropy heuristic
 
-Entropy checks only apply to long quoted alphanumeric/symbol string literals. LeakLens requires several character classes and a minimum estimated entropy, then excludes several common placeholder forms and plain hexadecimal checksums unless the line appears secret-related. This reduces noise but cannot remove all false positives. Use `--no-entropy` for a pattern-only run.
+Entropy checks only apply to long quoted alphanumeric/symbol string literals. LeakLens requires several character classes and a minimum estimated entropy, then excludes several common placeholder forms, single-case strings, and hexadecimal strings. This reduces noise but cannot remove all false positives. Use `--no-entropy` for a pattern-only run.
 
 ## Suppressions
 

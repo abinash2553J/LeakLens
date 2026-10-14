@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from leaklens.cli import main
@@ -26,3 +28,19 @@ def test_cli_writes_json_report(tmp_path: Path, monkeypatch) -> None:
     document = json.loads(report_path.read_text(encoding="utf-8"))
     assert document["summary"]["finding_count"] == 1
     assert token not in report_path.read_text(encoding="utf-8")
+
+
+def test_demo_runs_without_installing_and_redacts_synthetic_values() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    completed = subprocess.run(
+        [sys.executable, "examples/demo.py"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert "[REDACTED]" in completed.stdout
+    assert "Demo complete" in completed.stdout
+    assert "ghp_" not in completed.stdout

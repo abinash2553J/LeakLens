@@ -31,7 +31,8 @@ def test_detects_provider_token_and_redacts_output(tmp_path: Path) -> None:
 
 def test_detects_bare_env_value_and_quoted_generic_secret(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text("API_KEY=Abcdef1234567890\n", encoding="utf-8")  # leaklens:ignore
-    (tmp_path / "settings.py").write_text('database_password = "correct-horse-battery-staple"\n', encoding="utf-8")  # leaklens:ignore
+    synthetic_password = "correct" + "-horse-" + "battery-" + "staple"
+    (tmp_path / "settings.py").write_text(f'database_password = "{synthetic_password}"\n', encoding="utf-8")  # leaklens:ignore
 
     result = scan(tmp_path)
 
@@ -55,7 +56,7 @@ def test_inline_suppression_supports_one_rule_or_all(tmp_path: Path) -> None:
     github = "ghp_" + "c" * 36
     (tmp_path / "suppressed.py").write_text(
         f'AWS_KEY = "{aws}"  # leaklens:ignore LL001\n'
-        f'GITHUB_TOKEN = "{github}"  # leaklens:ignore\n',
+        f'GITHUB_TOKEN = "{github}"  # leaklens:ignore\n',  # leaklens:ignore LL012
         encoding="utf-8",
     )
 
@@ -236,7 +237,7 @@ def test_fingerprint_does_not_hash_the_raw_secret(tmp_path: Path) -> None:
     import hashlib
 
     weak_password = "weak" + "password"
-    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")
+    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")  # leaklens:ignore LL012
 
     result = scan(tmp_path)
     finding = result.findings[0]
@@ -252,7 +253,7 @@ def test_fingerprint_does_not_hash_the_raw_secret(tmp_path: Path) -> None:
 
 def test_duplicate_secret_lines_receive_distinct_fingerprints(tmp_path: Path) -> None:
     weak_password = "weak" + "password"
-    line = f'password = "{weak_password}"'
+    line = f'password = "{weak_password}"'  # leaklens:ignore LL012
     (tmp_path / "settings.py").write_text(line + "\n" + line + "\n", encoding="utf-8")
 
     result = scan(tmp_path)
@@ -263,7 +264,7 @@ def test_duplicate_secret_lines_receive_distinct_fingerprints(tmp_path: Path) ->
 
 def test_fingerprints_are_stable_for_identical_scans(tmp_path: Path) -> None:
     weak_password = "weak" + "password"
-    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")
+    (tmp_path / "settings.py").write_text(f'password = "{weak_password}"\n', encoding="utf-8")  # leaklens:ignore LL012
 
     first = scan(tmp_path)
     second = scan(tmp_path)
@@ -281,3 +282,72 @@ def test_sarif_uses_v2_partial_fingerprint_key(tmp_path: Path) -> None:
     fingerprints = document["runs"][0]["results"][0]["partialFingerprints"]
 
     assert list(fingerprints) == ["leaklens/v2"]
+
+
+def test_root_file_named_build_is_scanned_but_build_directory_is_skipped(tmp_path: Path) -> None:
+    value = "weak" + "password"
+    (tmp_path / "build").write_text(f'password = "{value}"\n', encoding="utf-8")
+    nested_build = tmp_path / "nested" / "build"
+    nested_build.mkdir(parents=True)
+    (nested_build / "x.py").write_text(f'password = "{value}"\n', encoding="utf-8")
+
+    result = scan(tmp_path)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].path == "build"
+
+
+def test_non_regular_fifo_is_skipped_without_reading(tmp_path: Path) -> None:
+    import os
+
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("FIFO creation is not available on this platform")
+    fifo = tmp_path / "secret-pipe"
+    os.mkfifo(fifo)
+
+    result = scan(tmp_path, paths=(Path("secret-pipe"),))
+
+    assert result.errors == []
+    assert result.scanned_files == 0
+    assert result.skipped_files == 1
+
+
+def test_line_numbers_only_advance_on_newline_characters(tmp_path: Path) -> None:
+    value = "weak" + "password"
+    (tmp_path / "controls.py").write_text(
+        "banner\x0c\x0b\u2028\n"
+        "safe = 1\n"
+        f'password = "{value}"\n',
+        encoding="utf-8",
+    )
+
+    result = scan(tmp_path)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].line == 3
+
+
+def test_single_source_version_is_used_in_json_and_sarif(tmp_path: Path) -> None:
+    from leaklens import __version__
+
+    (tmp_path / "app.py").write_text('print("safe")\n', encoding="utf-8")
+    result = scan(tmp_path)
+
+    assert json.loads(render_json(result))["tool"]["version"] == __version__
+    assert json.loads(render_sarif(result))["runs"][0]["tool"]["driver"]["version"] == __version__
+
+
+def test_entropy_heuristic_excludes_hexadecimal_and_single_case_values(tmp_path: Path) -> None:
+    lower_hex = "abcdef0123456789" * 3
+    mixed_hex = "aB12cD34" * 5
+    lower_single_case = "lowercase" * 5
+    (tmp_path / "checksums.py").write_text(
+        f'checksum = "{lower_hex}"\n'
+        f'checksum = "{mixed_hex}"\n'
+        f'value = "{lower_single_case}"\n',
+        encoding="utf-8",
+    )
+
+    result = scan(tmp_path)
+
+    assert result.findings == []

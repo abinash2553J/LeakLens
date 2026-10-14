@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ._version import __version__
 from .models import Finding, ScanResult, SEVERITY_ORDER
 from .rules import ALL_RULES
 
@@ -98,7 +99,7 @@ def render_sarif(result: ScanResult) -> str:
         "runs": [{
             "tool": {"driver": {
                 "name": "LeakLens",
-                "version": "1.0.0",
+                "version": __version__,
                 "rules": rules,
             }},
             "results": results,

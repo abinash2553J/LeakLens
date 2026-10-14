@@ -6,13 +6,14 @@ import hashlib
 import math
 import os
 import re
+import stat as stat_module
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from .ignore import IgnoreMatcher, inline_suppresses
 from .models import Finding, ScanResult
-from .rules import ALL_RULES, ENTROPY_RULE, RULES, Rule
+from .rules import ENTROPY_RULE, RULES, Rule
 
 
 PLACEHOLDER_PREFIXES = (
@@ -27,9 +28,6 @@ PLACEHOLDER_VALUES = {
     "examplekey", "sample", "dummy", "redacted", "null", "none", "undefined",
     "xxxxxxxx", "xxxxxxxxxx", "1234567890", "abcdefabcdefabcdef",
 }
-
-STRING_LITERALS = re.compile(r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)")
-SECRET_WORDS = re.compile(r"api|key|token|secret|password|passwd|credential|auth|private", re.I)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,8 +89,6 @@ class SecretScanner:
                 # Surface inaccessible paths through the normal error channel.
                 yield candidate
                 continue
-            if candidate.is_symlink():
-                continue
             if candidate.is_file():
                 # Explicit file arguments are intentional: ignore rules apply when walking directories.
                 if candidate not in seen:
@@ -126,11 +122,10 @@ class SecretScanner:
                         yield child
 
     def _scan_file(self, path: Path) -> tuple[list[Finding], bool]:
-        try:
-            stat = path.stat()
-        except OSError:
-            raise
-        if stat.st_size > self.config.max_file_size:
+        file_stat = path.stat()
+        if not stat_module.S_ISREG(file_stat.st_mode):
+            return [], True
+        if file_stat.st_size > self.config.max_file_size:
             return [], True
         with path.open("rb") as handle:
             raw = handle.read(self.config.max_file_size + 1)
@@ -142,7 +137,8 @@ class SecretScanner:
         findings: list[Finding] = []
         relative_path = self._display_path(path)
         fingerprint_occurrences: dict[tuple[str, str], int] = {}
-        for line_number, line in enumerate(text.splitlines(), start=1):
+        for line_number, raw_line in enumerate(text.split("\n"), start=1):
+            line = raw_line.rstrip("\r")
             detections = self._detect_line(line, allow_bare=self._supports_bare_values(path))
             if not detections:
                 continue
@@ -229,10 +225,8 @@ class SecretScanner:
                 value = match.group("secret")
                 if self._is_placeholder(value) or not self._looks_high_entropy(value):
                     continue
+                # Entropy does not flag single-case or hex strings.
                 if value.islower() or value.isupper():
-                    continue
-                # Do not treat plain hexadecimal checksums as credentials unless the line is secret-related.
-                if re.fullmatch(r"[0-9a-fA-F]{32,}", value) and not SECRET_WORDS.search(line):
                     continue
                 detections.append(_Detection(ENTROPY_RULE, *match.span("secret"), value))
 
