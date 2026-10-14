@@ -157,3 +157,29 @@ def test_ll012_sensitive_key_suffixes_through_scanner(
         assert "abcd1234" not in result.findings[0].snippet
     else:
         assert result.findings == []
+
+
+def test_ll012_ignores_unquoted_code_expressions_in_python(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text(
+        'password = os.environ.get("X")\n'
+        'token = self.request_token_value\n'
+        'password = form.password_field_value\n',
+        encoding="utf-8",
+    )
+
+    result = scan(tmp_path)
+
+    assert result.findings == []
+
+
+def test_ll012_scans_bare_values_only_in_config_files(tmp_path: Path) -> None:
+    value = "abcd1234" + "efgh5678"
+    (tmp_path / ".env.local").write_text(f"POSTGRES_PASSWORD={value}\n", encoding="utf-8")
+    (tmp_path / "settings.py").write_text(f"POSTGRES_PASSWORD={value}\n", encoding="utf-8")
+
+    result = scan(tmp_path)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].path == ".env.local"
+    assert result.findings[0].rule_id == "LL012"
+    assert value not in result.findings[0].snippet

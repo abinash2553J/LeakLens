@@ -100,7 +100,7 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         "LL012", "Generic secret assignment", "high", "A secret-like value is assigned to a sensitive variable or key.",
-        r"(?P<key>['\"]?[A-Za-z_][A-Za-z0-9_.-]*['\"]?)(?:\s*:\s*[A-Za-z_][A-Za-z0-9_.\[\]|]*)?\s*(?:=|:)\s*(?:['\"](?P<quoted>[^'\"\r\n]{8,})['\"]|(?P<bare>[A-Za-z0-9_./+=-]{12,}))",
+        r"(?P<key>['\"]?[A-Za-z_][A-Za-z0-9_.-]*['\"]?)(?:\s*:\s*[A-Za-z_][A-Za-z0-9_.\[\]|]*)?\s*(?:=|:)\s*(?:['\"](?P<quoted>[^'\"\r\n]{8,})['\"]|(?P<bare>[A-Za-z0-9_+/=-]{12,}))",
         group="quoted", priority=60, flags=re.IGNORECASE,
         recommendation="Move the value into an environment variable or secret manager. If it was committed, rotate it; deleting the line alone is not enough.",
     ),

@@ -157,7 +157,7 @@ The tests construct synthetic credentials at runtime instead of checking real-lo
 
 1. **Discover files:** walk requested paths without following symlinks; prune standard build, cache, and dependency folders.
 2. **Filter files:** apply ignore patterns, file-size limits, and a lightweight binary-file check.
-3. **Match rules:** run provider-specific regular expressions and generic assignment checks line by line. Optionally inspect long string literals with a Shannon-entropy heuristic.
+3. **Match rules:** run provider-specific regular expressions and generic assignment checks line by line. Unquoted generic values are considered only in configuration-style files (`.env*`, INI/CFG/CONF/PROPERTIES, YAML, shell scripts, and `Dockerfile`); source code requires quoted values for `LL012`. Optionally inspect long string literals with a Shannon-entropy heuristic.
 4. **Suppress and de-duplicate:** honor inline directives and prioritize specific provider rules when matches overlap.
 5. **Redact and report:** replace the detected span with `[REDACTED]`; emit text, JSON, or SARIF with file, line, column, rule, severity, recommendation, and a non-secret fingerprint.
 

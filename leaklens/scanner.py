@@ -144,7 +144,7 @@ class SecretScanner:
         findings: list[Finding] = []
         relative_path = self._display_path(path)
         for line_number, line in enumerate(text.splitlines(), start=1):
-            detections = self._detect_line(line)
+            detections = self._detect_line(line, allow_bare=self._supports_bare_values(path))
             if not detections:
                 continue
             unsuppressed = [
@@ -174,7 +174,16 @@ class SecretScanner:
                 ))
         return findings, False
 
-    def _detect_line(self, line: str) -> list[_Detection]:
+    @staticmethod
+    def _supports_bare_values(path: Path) -> bool:
+        """Return whether unquoted secret values are valid in this file format."""
+        if path.name.startswith(".env") or path.name == "Dockerfile":
+            return True
+        return path.suffix.lower() in {
+            ".ini", ".cfg", ".conf", ".properties", ".yaml", ".yml", ".sh", ".bash", ".zsh",
+        }
+
+    def _detect_line(self, line: str, *, allow_bare: bool = False) -> list[_Detection]:
         detections: list[_Detection] = []
         for rule in RULES:
             for match in rule.pattern.finditer(line):
@@ -185,7 +194,7 @@ class SecretScanner:
                     if match.groupdict().get("quoted") is not None:
                         span = match.span("quoted")
                         value = match.group("quoted")
-                    elif match.groupdict().get("bare") is not None:
+                    elif match.groupdict().get("bare") is not None and allow_bare:
                         span = match.span("bare")
                         value = match.group("bare")
                 elif isinstance(group, str):
@@ -236,7 +245,10 @@ class SecretScanner:
             return True
         if normalized.startswith(PLACEHOLDER_PREFIXES):
             return True
-        if any(marker in normalized for marker in ("process.env", "os.getenv", "getenv(", "secretref", "<your", "<secret", "${", "{{")):
+        if any(marker in normalized for marker in (
+            "process.env", "os.environ", "environ.get", "environ[", "getenv", "env(",
+            "secretref", "<your", "<secret", "${", "{{",
+        )):
             return True
         return False
 
