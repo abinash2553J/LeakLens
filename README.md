@@ -120,7 +120,7 @@ Upload the generated SARIF in a GitHub Actions workflow using the official SARIF
 
 ## Ignore rules and suppressions
 
-LeakLens reads patterns from the repository-root `.gitignore` and `.leaklensignore` files. It supports common patterns, directory suffixes such as `generated/`, comments, and basic `!` negation. Nested ignore files and every edge case of Git's ignore semantics are not currently implemented.
+LeakLens reads patterns from the repository-root `.gitignore` and `.leaklensignore` files when recursively scanning directories. It supports common patterns, directory suffixes such as `generated/`, comments, and basic `!` negation. An explicitly named file is scanned even when it matches an ignore rule, so `leaklens .env.local` works even if `.env.local` is in `.gitignore`; a directory scan (`leaklens .`) still skips that file. Nested ignore files and every edge case of Git's ignore semantics are not currently implemented.
 
 Add a repository-specific exclusion to `.leaklensignore`:
 

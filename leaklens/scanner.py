@@ -94,9 +94,7 @@ class SecretScanner:
             if candidate.is_symlink():
                 continue
             if candidate.is_file():
-                rel = self._relative_path(candidate)
-                if self.matcher.is_ignored(rel, is_dir=False):
-                    continue
+                # Explicit file arguments are intentional: ignore rules apply when walking directories.
                 if candidate not in seen:
                     seen.add(candidate)
                     yield candidate

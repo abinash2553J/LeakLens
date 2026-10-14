@@ -217,3 +217,16 @@ def test_bare_inline_suppression_hides_all_overlapping_findings(tmp_path: Path) 
     result = scan(tmp_path)
 
     assert result.findings == []
+
+
+def test_explicit_ignored_file_is_scanned_but_directory_scan_skips_it(tmp_path: Path) -> None:
+    value = "abcd1234" + "efgh5678"
+    (tmp_path / ".gitignore").write_text(".env.local\n", encoding="utf-8")
+    (tmp_path / ".env.local").write_text(f"POSTGRES_PASSWORD={value}\n", encoding="utf-8")
+
+    explicit = scan(tmp_path, paths=(Path(".env.local"),))
+    directory = scan(tmp_path)
+
+    assert len(explicit.findings) == 1
+    assert explicit.findings[0].path == ".env.local"
+    assert directory.findings == []
