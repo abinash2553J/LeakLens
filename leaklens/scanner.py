@@ -147,11 +147,13 @@ class SecretScanner:
             detections = self._detect_line(line, allow_bare=self._supports_bare_values(path))
             if not detections:
                 continue
-            unsuppressed = [
-                detection for detection in detections
+            # Resolve overlaps before suppression so hiding a provider-specific winner
+            # cannot reveal a generic assignment match over the same span.
+            chosen = self._remove_overlaps(detections)
+            chosen = [
+                detection for detection in chosen
                 if not inline_suppresses(line, detection.rule.rule_id)
             ]
-            chosen = self._remove_overlaps(unsuppressed)
             if not chosen:
                 continue
             redacted = self._redact(line, [(item.start, item.end) for item in chosen])

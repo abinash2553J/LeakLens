@@ -183,3 +183,37 @@ def test_ll012_scans_bare_values_only_in_config_files(tmp_path: Path) -> None:
     assert result.findings[0].path == ".env.local"
     assert result.findings[0].rule_id == "LL012"
     assert value not in result.findings[0].snippet
+
+
+def test_suppressed_provider_winner_does_not_leak_to_ll012(tmp_path: Path) -> None:
+    token = "ghp_" + "a1B2c3D4" * 5
+    (tmp_path / "suppressed.py").write_text(
+        f'token = "{token}"  # leaklens:ignore LL002\n', encoding="utf-8"
+    )
+
+    result = scan(tmp_path)
+
+    assert result.findings == []
+
+
+def test_suppressing_ll012_keeps_the_overlapping_provider_rule(tmp_path: Path) -> None:
+    token = "ghp_" + "a1B2c3D4" * 5
+    (tmp_path / "suppressed.py").write_text(
+        f'token = "{token}"  # leaklens:ignore LL012\n', encoding="utf-8"
+    )
+
+    result = scan(tmp_path)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].rule_id == "LL002"
+
+
+def test_bare_inline_suppression_hides_all_overlapping_findings(tmp_path: Path) -> None:
+    token = "ghp_" + "a1B2c3D4" * 5
+    (tmp_path / "suppressed.py").write_text(
+        f'token = "{token}"  # leaklens:ignore\n', encoding="utf-8"
+    )
+
+    result = scan(tmp_path)
+
+    assert result.findings == []
