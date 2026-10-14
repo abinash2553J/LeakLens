@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from leaklens.reporters import render_json, render_sarif, render_text
 from leaklens.scanner import ScanConfig, SecretScanner
 
@@ -120,3 +122,38 @@ def test_oversized_and_binary_files_are_skipped(tmp_path: Path) -> None:
 
     assert result.scanned_files == 0
     assert result.skipped_files == 2
+
+
+@pytest.mark.parametrize(
+    ("filename", "source", "expected"),
+    [
+        ("database.py", 'DATABASE_PASSWORD = "' + ("hunter2" * 2) + '"', True),
+        ("github.py", 'GITHUB_TOKEN = "' + ("abcd1234" + "efgh5678") + '"', True),
+        ("aws.py", 'AWS_SECRET_ACCESS_KEY = "' + ("abcd1234" + "efgh5678") + '"', True),
+        ("jwt.py", 'JWT_SECRET = "' + ("abcd1234" + "efgh5678") + '"', True),
+        ("settings.json", '{"password": "' + ("hunter2" * 2) + '"}', True),
+        ("config.json", 'config = {"api_key": "' + ("abcd1234" + "efgh5678") + '"}', True),
+        ("app.ts", 'apiKey: "' + ("abcd1234" + "efgh5678") + '"', True),
+        ("config.yaml", "x-api-key: " + ("abcd1234" + "efgh5678"), True),
+        ("application.properties", "spring.datasource.password=" + ("abcd1234" + "efgh5678"), True),
+        ("typed.py", 'api_key: str = "' + ("abcd1234" + "efgh5678") + '"', True),
+        (".env", "POSTGRES_PASSWORD=" + ("abcd1234" + "efgh5678"), True),
+        ("miss.py", 'password_hash = "' + "abcdefghijklmnop" + '"', False),
+        ("miss.py", "max_tokens = 4096", False),
+        ("miss.ts", 'token_url = "https://example.com/token"', False),
+        ("miss.py", 'AWS_ACCESS_KEY_ID = "' + "not-an-aws-id" + '"', False),
+    ],
+)
+def test_ll012_sensitive_key_suffixes_through_scanner(
+    tmp_path: Path, filename: str, source: str, expected: bool
+) -> None:
+    (tmp_path / filename).write_text(source + "\n", encoding="utf-8")
+    result = scan(tmp_path)
+    if expected:
+        assert len(result.findings) == 1
+        assert result.findings[0].rule_id == "LL012"
+        assert "[REDACTED]" in result.findings[0].snippet
+        assert "hunter2" not in result.findings[0].snippet
+        assert "abcd1234" not in result.findings[0].snippet
+    else:
+        assert result.findings == []

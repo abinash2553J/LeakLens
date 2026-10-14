@@ -199,6 +199,16 @@ class SecretScanner:
                     span = match.span(group) if value else None
                 if span is None or span[0] == span[1] or self._is_placeholder(value):
                     continue
+                if rule.rule_id == "LL012":
+                    key = match.group("key").strip("'\"").lower()
+                    normalized_key = key.translate(str.maketrans("", "", "_.-"))
+                    sensitive_suffixes = (
+                        "apikey", "secretkey", "accesskey", "privatekey", "clientsecret",
+                        "authtoken", "accesstoken", "refreshtoken", "token", "password",
+                        "passwd", "secret", "credential", "credentials", "dburl", "databaseurl",
+                    )
+                    if not normalized_key.endswith(sensitive_suffixes):
+                        continue
                 detections.append(_Detection(rule, span[0], span[1], value))
 
         if self.config.include_entropy:

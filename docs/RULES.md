@@ -15,9 +15,13 @@ LeakLens combines known-format matchers with conservative heuristics. A matching
 | `LL009` | High | SendGrid API-key-like values (`SG.….…`) |
 | `LL010` | Critical | PEM/OpenSSH private-key header (including encrypted PEM headers) |
 | `LL011` | Medium | JWT-shaped strings |
-| `LL012` | High | Values assigned to secret-like names such as `API_KEY`, `TOKEN`, `PASSWORD`, `CLIENT_SECRET`, or `DATABASE_URL` |
+| `LL012` | High | Values assigned to keys whose normalized names end with a recognized credential suffix, including `API_KEY`, `GITHUB_TOKEN`, `DATABASE_PASSWORD`, `JWT_SECRET`, and `DATABASE_URL` |
 | `LL013` | High | Hard-coded `Bearer` token values |
 | `LL014` | Medium | Long quoted strings with high character diversity and estimated Shannon entropy |
+
+## Generic assignment rule and key normalization
+
+`LL012` captures the complete key, including optional quotes around JSON keys and optional type annotations such as `api_key: str = ...`. It lowercases the key and removes `_`, `.`, and `-`, then requires the normalized key to end with one of these suffixes: `apikey`, `secretkey`, `accesskey`, `privatekey`, `clientsecret`, `authtoken`, `accesstoken`, `refreshtoken`, `token`, `password`, `passwd`, `secret`, `credential`, `credentials`, `dburl`, or `databaseurl`. Therefore `password_hash`, `token_url`, `max_tokens`, `secret_name`, and `AWS_ACCESS_KEY_ID` do not match this generic rule. Provider-specific rules are still evaluated independently.
 
 ## Entropy heuristic
 
